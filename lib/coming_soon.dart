@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 // ─────────────────────────────────────────────────────────────
 //  Design tokens
@@ -13,6 +16,8 @@ const _textPrimary = Color(0xFFF5F5F5);
 const _textMuted = Color(0xFF6B7280);
 const _textDim = Color(0xFF374151);
 const _red = Color(0xFFEF4444);
+
+const _formspreeEndpoint = 'https://formspree.io/f/xppzrgdw';
 
 // ─────────────────────────────────────────────────────────────
 //  Page state
@@ -29,6 +34,7 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
   final _phoneCtrl = TextEditingController();
   String? _error;
   bool _submitted = false;
+  bool _loading = false;
 
   @override
   void dispose() {
@@ -44,7 +50,9 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
   bool _validPhone(String s) =>
       RegExp(r'^\+?[\d\s\-(]{1,4}[\d\s\-()]{6,14}$').hasMatch(s.trim());
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_loading) return;
+
     final email = _emailCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     setState(() => _error = null);
@@ -67,7 +75,45 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
       return;
     }
 
-    setState(() => _submitted = true);
+    setState(() => _loading = true);
+
+    try {
+      final body = <String, String>{
+        if (email.isNotEmpty) 'email': email,
+        if (phone.isNotEmpty) 'phone': phone,
+        '_subject': 'SnapSalon early access signup',
+      };
+
+      final response = await http.post(
+        Uri.parse(_formspreeEndpoint),
+        headers: const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        setState(() {
+          _submitted = true;
+          _loading = false;
+          _error = null;
+        });
+      } else {
+        setState(() {
+          _loading = false;
+          _error = 'Something went wrong. Please try again in a moment.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Could not connect. Check your internet and try again.';
+      });
+    }
   }
 
   @override
@@ -95,6 +141,7 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
                 phoneCtrl: _phoneCtrl,
                 error: _error,
                 submitted: _submitted,
+                loading: _loading,
                 onSubmit: _submit,
               ),
               _divider(),
@@ -448,6 +495,7 @@ class _EarlyAccessSection extends StatelessWidget {
     required this.phoneCtrl,
     required this.error,
     required this.submitted,
+    required this.loading,
     required this.onSubmit,
   });
 
@@ -456,6 +504,7 @@ class _EarlyAccessSection extends StatelessWidget {
   final TextEditingController phoneCtrl;
   final String? error;
   final bool submitted;
+  final bool loading;
   final VoidCallback onSubmit;
 
   @override
@@ -497,6 +546,7 @@ class _EarlyAccessSection extends StatelessWidget {
                   emailCtrl: emailCtrl,
                   phoneCtrl: phoneCtrl,
                   error: error,
+                  loading: loading,
                   onSubmit: onSubmit,
                 ),
           const SizedBox(height: 20),
@@ -519,6 +569,7 @@ class _Form extends StatelessWidget {
     required this.emailCtrl,
     required this.phoneCtrl,
     required this.error,
+    required this.loading,
     required this.onSubmit,
   });
 
@@ -526,6 +577,7 @@ class _Form extends StatelessWidget {
   final TextEditingController emailCtrl;
   final TextEditingController phoneCtrl;
   final String? error;
+  final bool loading;
   final VoidCallback onSubmit;
 
   @override
@@ -542,6 +594,7 @@ class _Form extends StatelessWidget {
               controller: emailCtrl,
               hint: 'you@yoursalon.com',
               keyboardType: TextInputType.emailAddress,
+              enabled: !loading,
               onSubmit: onSubmit,
             ),
           ),
@@ -555,6 +608,7 @@ class _Form extends StatelessWidget {
               controller: phoneCtrl,
               hint: '+1 555 000 0000',
               keyboardType: TextInputType.phone,
+              enabled: !loading,
               onSubmit: onSubmit,
             ),
           ),
@@ -578,7 +632,7 @@ class _Form extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ── Submit button ────────────────────────────────
-          _SubmitButton(onPressed: onSubmit),
+          _SubmitButton(onPressed: onSubmit, loading: loading),
         ],
       ),
     );
@@ -647,17 +701,20 @@ class _StyledTextField extends StatelessWidget {
     required this.hint,
     required this.keyboardType,
     required this.onSubmit,
+    this.enabled = true,
   });
 
   final TextEditingController controller;
   final String hint;
   final TextInputType keyboardType;
   final VoidCallback onSubmit;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
+      enabled: enabled,
       onSubmitted: (_) => onSubmit(),
       keyboardType: keyboardType,
       inputFormatters: [LengthLimitingTextInputFormatter(80)],
@@ -674,6 +731,10 @@ class _StyledTextField extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: _border),
         ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _border),
+        ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide:
@@ -685,8 +746,9 @@ class _StyledTextField extends StatelessWidget {
 }
 
 class _SubmitButton extends StatefulWidget {
-  const _SubmitButton({required this.onPressed});
+  const _SubmitButton({required this.onPressed, required this.loading});
   final VoidCallback onPressed;
+  final bool loading;
 
   @override
   State<_SubmitButton> createState() => _SubmitButtonState();
@@ -697,30 +759,50 @@ class _SubmitButtonState extends State<_SubmitButton> {
 
   @override
   Widget build(BuildContext context) {
+    final disabled = widget.loading;
+
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
+      onEnter: (_) {
+        if (!disabled) setState(() => _hovered = true);
+      },
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
-        onTap: widget.onPressed,
+        onTap: disabled ? null : widget.onPressed,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: double.infinity,
           padding:
               const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
           decoration: BoxDecoration(
-            color: _hovered ? const Color(0xFF0EA472) : _accent,
+            color: disabled
+                ? _accent.withValues(alpha: 0.55)
+                : (_hovered ? const Color(0xFF0EA472) : _accent),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text(
-            'Get Early Access',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-              letterSpacing: 0.1,
-            ),
-          ),
+          child: widget.loading
+              ? const SizedBox(
+                  height: 20,
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                )
+              : const Text(
+                  'Get Early Access',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    letterSpacing: 0.1,
+                  ),
+                ),
         ),
       ),
     );
