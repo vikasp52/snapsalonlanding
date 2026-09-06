@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import 'analytics/meta_pixel.dart';
+
 // ─────────────────────────────────────────────────────────────
 //  Design tokens
 // ─────────────────────────────────────────────────────────────
@@ -96,6 +98,11 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
       if (!mounted) return;
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
+        // Meta Pixel `Lead`. Fired here and nowhere else: the lead is only a
+        // lead once Formspree has accepted it. Firing on button press would
+        // teach Meta to optimise for people who tap and bounce.
+        MetaPixel.lead();
+
         setState(() {
           _submitted = true;
           _loading = false;
